@@ -145,7 +145,7 @@ def process_excel(excel_path, share_dict=None, exe_path='chromedriver', headless
     
 def partial_wraper(input_args):
     excel_path, share_dict, exe_path, headless, output_dir = input_args
-    return process_excel(excel_path, share_dict, exe_path, headless, output_dir)
+    return process_excel(excel_path, share_dict, exe_path, headless, output_dir, target_col_name='Chrom:Pos')
 
 
 
@@ -162,7 +162,7 @@ class WebWorker(object):
             pls. check https://blog.csdn.net/u013360850/article/details/54962248
         """
         chrome_options = webdriver.ChromeOptions()
-        chrome_options.add_argument('--start-maximized')
+        # chrome_options.add_argument('--start-maximized')
         chrome_options.add_argument('--disable-logging')
         chrome_options.add_argument('--ignore-certificate-errors')
         chrome_options.add_argument('--lang=en-us')
@@ -179,9 +179,9 @@ class WebWorker(object):
             log_path = '/dev/null'
         driver = webdriver.Chrome(executable_path, chrome_options=chrome_options, service_log_path=log_path)
 
-        driver.implicitly_wait(10)
+        # driver.implicitly_wait(10)
         # driver.set_window_size(1280, 960)
-        driver.maximize_window()
+        # driver.maximize_window()
         self.driver = driver
         # driver.execute_script("window.open('');")
         self.url_nucleotide = url_nucleotide
@@ -191,6 +191,7 @@ class WebWorker(object):
         self.page_genomes_title = '1000 Genomes Browser'
         self.page_nucleotide_title = 'Nucleotide BLAST'
         self.input_box_xpath = '//*[@id="loc-search"]'
+        self.exons_xpath = '//*[@id="ui-ncbiexternallink-1"]/div[2]/div[5]/div[2]/div/div[2]/div/div/div[2]/span[3]/div[3]/span'
         self.zoomout_xpath = "//a[@class='x-btn x-unselectable x-box-item x-toolbar-item x-btn-default-toolbar-small'][5]"
         self.page_div_xpath = '//*[@id="svw-1"]'
         self.canvas_xpath = '//canvas[@class="sv-drag sv-highlight sv-dblclick"][2]'
@@ -225,6 +226,16 @@ class WebWorker(object):
                 nrof_tab = len(window_handles)
                 if nrof_tab == 1:
                     self.driver.switch_to_window(window_handles[0])
+            alert_msg = 'Alert Text: None'
+            if alert_msg in msg:
+                self.driver.execute_script("window.open('');")
+                window_handles = self.driver.window_handles
+                nrof_tab = len(window_handles)
+                if nrof_tab >= 2:
+                    for i in range(nrof_tab-1):
+                        self.driver.switch_to_window(window_handles[i])
+                        self.driver.close()
+                self.driver.switch_to_window(self.driver.window_handles[0])
             # traceback.print_stack()
         finally:
             return result
@@ -292,15 +303,15 @@ class WebWorker(object):
                 return None
         else:
             self.driver.refresh() ### if not refresh, right_click will break TODO: fix this bug.
-
-        waiter = WebDriverWait(self.driver, 10)
+        time.sleep(1)
+        # waiter = WebDriverWait(self.driver, 10)
         input_button = self.driver.find_element_by_class_name(self.input_button_class_name)
         input_box = self.get_element(self.input_box_xpath)
         input_box.clear()
         input_box.send_keys(input_data)
         time.sleep(0.5)
         input_button.click()
-        time.sleep(0.5)
+        time.sleep(1)
         
         loading_var = self.driver.find_element_by_xpath(self.load_variable_xpath)
         while loading_var.is_displayed():
@@ -318,9 +329,9 @@ class WebWorker(object):
             div_panel = self.get_element(self.loading_div_xpath, 2)
             if div_panel is None:
                 continue
-            success = waiter.until_not(EC.staleness_of(div_panel))
-            if success:
-                continue
+            # success = waiter.until_not(EC.staleness_of(div_panel))
+            # if success:
+            #     continue
             if not 'Loading' in div_panel.text:
                 break
             time.sleep(0.5)
@@ -393,8 +404,8 @@ class WebWorker(object):
         database_select.click()
         time.sleep(1)
         blast_button.click()
-        for _ in range(3):
-            table = self.get_element(self.result_table_xpath, 120, visible=True) 
+        for _ in range(10):
+            table = self.get_element(self.result_table_xpath, 20, visible=True) 
             result_panel = self.get_element(self.reult_panel_xpath, 10, visible=True) 
             if table is None:
                 self.driver.refresh()
@@ -439,10 +450,11 @@ if __name__ == '__main__':
     parser.add_argument('-i', '--input-dir', type=str, default='../excels')
     parser.add_argument('-o', '--output-dir', type=str, default='../output')
     parser.add_argument('-ext', '--extension', type=str, default='xlsx')
-    parser.add_argument('--headless', action='store_false', help='Whether to set headless mode.')
+    parser.add_argument('--headless', action='store_true', help='Whether to set headless mode.')
     parser.add_argument('-p', '--pickle-file', type=str, default='../data/keys.pkl')
     parser.add_argument('-exe', '--exe-path', type=str, default='chromedriver', help='For windows, input path of "chromedriver.exe"')
     parser.add_argument('--test', action='store_true', help='--test to processes only 1 excel in 1 process.')
+    parser.add_argument('-m', '--multi-proc', action='store_true', help='-s to use one process.')
     args = parser.parse_args()
     assert os.path.exists(args.input_dir) and os.path.isdir(args.input_dir), 'Directory not exists: ' + args.input_dir
     keys_dict = None
@@ -467,10 +479,16 @@ if __name__ == '__main__':
     nrof_excel = len(excel_paths)
     print('Totally %2d excel found in %s' %(nrof_excel, args.input_dir))
     if nrof_excel:
-            keys_dict_share = {}
-            if keys_dict is not None:
-                keys_dict_share.update(keys_dict)
-            excel_paths = sorted(excel_paths)
+        keys_dict_share = {}
+        if keys_dict is not None:
+            keys_dict_share.update(keys_dict)
+        excel_paths = sorted(excel_paths)
+        if not args.multi_proc:
+            for excel_path in excel_paths:
+                process_excel(excel_path, share_dict=keys_dict_share, headless=args.headless, 
+                        output_dir=args.output_dir, target_col_name='Chrom:Pos')
+        else:
+
             try:
                 func_args = [(excel, keys_dict_share, args.exe_path, args.headless, args.output_dir) for excel in excel_paths]
                 results = []
@@ -488,7 +506,7 @@ if __name__ == '__main__':
                         if v != 'unknown':
                             keys_dict_share[k] = v 
                 keys_dict_share = update_from_pkl(keys_dict_share, args.output_dir)                    
-                print('All done.')
-                with open(args.pickle_file, 'wb') as f:
-                    pickle.dump(keys_dict_share, f)
-                print('Finishing update keys to ' + args.pickle_file)
+        print('All done.')
+        with open(args.pickle_file, 'wb') as f:
+            pickle.dump(keys_dict_share, f)
+        print('Finishing update keys to ' + args.pickle_file)
