@@ -151,6 +151,7 @@ def partial_wraper(input_args):
 
 class WebWorker(object):
     
+
     def __init__(self, url_genomes=URL_genomes, url_nucleotide=URL_nucleotide, executable_path='chromedriver', headless=True):
         """
         :param url_genomes: url
@@ -182,6 +183,7 @@ class WebWorker(object):
         # driver.implicitly_wait(10)
         # driver.set_window_size(1280, 960)
         # driver.maximize_window()
+        # driver.set_window_position(-2000, 0) ### hide GUI, not headless mode,
         self.driver = driver
         # driver.execute_script("window.open('');")
         self.url_nucleotide = url_nucleotide
@@ -210,7 +212,8 @@ class WebWorker(object):
         self.popup_box_xpath = '//div[@class="x-menu x-layer x-menu-default x-body x-border-box"][3]'
         self.reult_panel_xpath = '//*[@id="alignView"]'
         self.waiting_p_xpath = '//*[@id="content"]/p[2]'
-
+        self.no_result_xpath = '//*[@id="summary"]/ul/li/p'
+        xp = '//*[@id="ui-ncbiexternallink-1"]/div[2]/div[5]/div[3]/div[2]/div/div[8]/div[1]/div'
 
     def __call__(self, input_data):
         result = 'unknown'
@@ -385,8 +388,9 @@ class WebWorker(object):
             self.driver.switch_to_window(self.driver.window_handles[0])
             return None
         data = [text_area.text, from_box.get_attribute('value'), to_box.get_attribute('value')]
-        # print('Three temp data: [text_area, from, to] = ', data)
+        print('Three temp data: [text_area, from, to] = ', data)
         return data
+
 
     def parse_result(self, data):
         if data is None:
@@ -395,6 +399,13 @@ class WebWorker(object):
         if not self.load_page(self.url_nucleotide, tab_index=1):
             return 'unknown'
         xpaths = [self.text_area_xpath, self.from_box_xpath, self.to_box_xpath]
+        for _ in range(10):
+            x = self.get_element(self.text_area_xpath, 3, visible=True)
+            if x is None:
+                self.refresh()
+            else:
+                break
+
         boxes = [self.get_element(x) for x in xpaths]
         blast_button = self.get_element(self.blast_button_xpath)
         for dat, box in zip(data, boxes):
@@ -404,7 +415,12 @@ class WebWorker(object):
         database_select.click()
         time.sleep(1)
         blast_button.click()
+        bad_msg = 'No significant similarity found. For reasons why'
         for _ in range(10):
+            bad_pan = self.get_element(self.no_result_xpath, 10, visible=True)
+            if bad_pan and bad_msg in bad_pan.text:
+                print('Bad result.')
+                break
             table = self.get_element(self.result_table_xpath, 20, visible=True) 
             result_panel = self.get_element(self.reult_panel_xpath, 10, visible=True) 
             if table is None:
@@ -437,10 +453,17 @@ class WebWorker(object):
             self.driver.switch_to_window(self.driver.window_handles[0])
         return result
 
+
+    def refresh(self):
+        self.driver.refresh()
+        # self.driver.execute_script("location.reload()")
+
+
     def __del__(self):
         if hasattr(self, 'driver'):
             self.driver.quit()
         pass
+
 
 
 if __name__ == '__main__':
@@ -486,7 +509,7 @@ if __name__ == '__main__':
         if not args.multi_proc:
             for excel_path in excel_paths:
                 process_excel(excel_path, share_dict=keys_dict_share, headless=args.headless, 
-                        output_dir=args.output_dir, target_col_name='Chrom:Pos')
+                        output_dir=args.output_dir, target_col_name='Chrom:pos')
         else:
 
             try:
