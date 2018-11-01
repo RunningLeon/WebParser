@@ -9,7 +9,7 @@ import sys
 import time
 import copy
 import random
-
+import numpy as np
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver import ActionChains
@@ -110,6 +110,7 @@ def process_excel(excel_path, share_dict=None, exe_path='chromedriver', headless
     sheets_dict = pd.read_excel(excel_path, sheet_name=None, header=0)
     sheet_names = list(sheets_dict.keys())
     sheet_chosen_names = sheet_names[:nrof_sheet]
+    ### np.random.shuffle(sheet_chosen_names)
     sheets_output_dict = {name: sheets_dict[name] for name in sheet_names[nrof_sheet:]} #### rest sheet dict
     nrof_sheet_chosen = len(sheet_chosen_names)
     if nrof_sheet_chosen != nrof_sheet:
@@ -416,7 +417,8 @@ class WebWorker(object):
         time.sleep(1)
         blast_button.click()
         bad_msg = 'No significant similarity found. For reasons why'
-        for _ in range(10):
+        table = None
+        for _ in range(3):
             bad_pan = self.get_element(self.no_result_xpath, 10, visible=True)
             if bad_pan and bad_msg in bad_pan.text:
                 print('Bad result.')
